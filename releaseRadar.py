@@ -151,29 +151,14 @@ def getNewestRelease(artistId, album_type, local = False):
 		else:
 			lastRelease = {'release_date': '1910-01-01', 'id': ''}
 		return lastRelease
-	lastReleaseNZ = sp.artist_albums(artistId,album_type=album_type,country='NZ',limit=1)['items']
-	if len(lastReleaseNZ)>0:
-		lastReleaseNZ = lastReleaseNZ[0]
+	lastRelease = sp.artist_albums(artistId,album_type=album_type,limit=1)['items']
+	if len(lastRelease)>0:
+		lastRelease = lastRelease[0]
 	else:
-		lastReleaseNZ = {'release_date': '1910-01-01', 'id': ''}
-	lastReleaseIT = sp.artist_albums(artistId,album_type=album_type,country='IT',limit=1)['items']
-	if len(lastReleaseIT)>0:
-		lastReleaseIT = lastReleaseIT[0]
-	else:
-		lastReleaseIT = {'release_date': '1910-01-01', 'id': ''}
-	if lastReleaseNZ:
-		lastReleaseNZ['release_date'] = lastReleaseNZ['release_date'][:10]
-		lastReleaseIT['release_date'] = lastReleaseIT['release_date'][:10]
-		if lastReleaseNZ['id'] == lastReleaseIT['id']:
-			return lastReleaseIT
-		lrNZDate = datetime.datetime.strptime(lastReleaseNZ['release_date'], '%Y-%m-%d')
-		lrITDate = datetime.datetime.strptime(lastReleaseIT['release_date'], '%Y-%m-%d')
-		if (lrNZDate > lrITDate):
-			return lastReleaseNZ
-		else:
-			return lastReleaseIT
-	else:
-		return lastReleaseIT
+		lastRelease = {'release_date': '1910-01-01', 'id': ''}
+	lastRelease['release_date'] = lastRelease['release_date'][:10]
+	return lastRelease
+
 
 def botGetLastArtistReleases(userID, artistId):
 	con = sqlite3.connect(os.path.join(os.path.dirname(os.path.realpath(__file__)),'database.db'))
