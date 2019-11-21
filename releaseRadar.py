@@ -28,7 +28,7 @@ def chunks(l, n):
 
 def dbSetup(conn, cur):
 	stmt1 = "CREATE TABLE IF NOT EXISTS user (userID integer, artistID text)"
-	stmt2 = "CREATE TABLE IF NOT EXISTS artist (artistID text PRIMARY KEY, lastSingleID text, lastSingleDate text, lastAlbumID text, lastAlbumDate text)"
+	stmt2 = "CREATE TABLE IF NOT EXISTS artist (artistID text PRIMARY KEY, lastSingleID text, lastSingleDate text, lastSingleName text, lastAlbumID text, lastAlbumDate text, lastAlbumName text)"
 	cur.execute(stmt1)
 	cur.execute(stmt2)
 	conn.commit()
@@ -57,16 +57,16 @@ def getUsersForArtist(conn, cur, artistID):
 	else:
 		return []
 
-def updateLastArtistSingle(conn, cur, artistID, lastID, lastDate):
-	cur.execute("UPDATE artist SET lastSingleID = (?), lastSingleDate = (?) WHERE artistID = (?);", (lastID, lastDate, artistID))
+def updateLastArtistSingle(conn, cur, artistID, lastID, lastDate, lastName):
+	cur.execute("UPDATE artist SET lastSingleID = (?), lastSingleDate = (?), lastSingleName = (?) WHERE artistID = (?);", (lastID, lastDate, lastName, artistID))
 	conn.commit()
 
-def updateLastArtistAlbum(conn, cur, artistID, lastID, lastDate):
-	cur.execute("UPDATE artist SET lastAlbumID = (?), lastAlbumDate = (?) WHERE artistID = (?);", (lastID, lastDate, artistID))
+def updateLastArtistAlbum(conn, cur, artistID, lastID, lastDate, lastName):
+	cur.execute("UPDATE artist SET lastAlbumID = (?), lastAlbumDate = (?), lastAlbumName = (?) WHERE artistID = (?);", (lastID, lastDate, lastName, artistID))
 	conn.commit()
 
-def addArtist(conn, cur, artistID, lastSingleID, lastSingleDate, lastAlbumID, lastAlbumDate):
-	cur.execute("INSERT INTO artist (artistID, lastSingleID, lastSingleDate, lastAlbumID, lastAlbumDate) VALUES (?, ?, ?, ?, ?)", (artistID, lastSingleID, lastSingleDate, lastAlbumID, lastAlbumDate))
+def addArtist(conn, cur, artistID, lastSingleID, lastSingleDate, lastSingleName, lastAlbumID, lastAlbumDate, lastAlbumName):
+	cur.execute("INSERT INTO artist (artistID, lastSingleID, lastSingleDate, lastSingleName, lastAlbumID, lastAlbumDate, lastAlbumName) VALUES (?, ?, ?, ?, ?, ?, ?)", (artistID, lastSingleID, lastSingleDate, lastSingleName, lastAlbumID, lastAlbumDate, lastAlbumName))
 	conn.commit()
 
 def getArtist(conn, cur, artistID):
@@ -94,7 +94,7 @@ def botAddArtist(con, cur, artistId):
 	if not artist:
 		latestAlbum = getNewestRelease(artistId, 'album', True)
 		latestSingle = getNewestRelease(artistId, 'single', True)
-		addArtist(con, cur, artistId, latestSingle['id'], latestSingle['release_date'], latestAlbum['id'], latestAlbum['release_date'])
+		addArtist(con, cur, artistId, latestSingle['id'], latestSingle['release_date'], latestSingle['name'], latestAlbum['id'], latestAlbum['release_date'], latestAlbum['name'])
 		print("Now artist "+artistId+" is being tracked")
 		return
 
@@ -125,37 +125,40 @@ def updateNewReleases(con, cur, artistId):
 	latestSingle = getNewestRelease(artistId, 'single')
 	artist = getArtist(con, cur, artistId)
 	if not artist:
-		addArtist(con, cur, artistId, latestSingle['id'], latestSingle['release_date'], latestAlbum['id'], latestAlbum['release_date'])
+		addArtist(con, cur, artistId, latestSingle['id'], latestSingle['release_date'], latestSingle['name'], latestAlbum['id'], latestAlbum['release_date'], latestAlbum['name'])
 		return
 	if latestSingle['id'] != artist[1]:
-		dbDate = datetime.datetime.strptime(artist[2], '%Y-%m-%d')
-		newDate = datetime.datetime.strptime(latestSingle['release_date'], '%Y-%m-%d')
-		if dbDate <= newDate:
-			updateLastArtistSingle(con, cur, artistId, latestSingle['id'], latestSingle['release_date'])
-			print("New single found for "+artistId+": "+latestSingle['artists'][0]['name']+" - "+latestSingle['name'])
-			sendReleaseToUsers(con, cur, artistId, latestSingle)
-	if latestAlbum['id'] != artist[3]:
-		dbDate = datetime.datetime.strptime(artist[4], '%Y-%m-%d')
-		newDate = datetime.datetime.strptime(latestAlbum['release_date'], '%Y-%m-%d')
-		if dbDate <= newDate:
-			updateLastArtistAlbum(con, cur, artistId, latestAlbum['id'], latestAlbum['release_date'])
-			print("New album found for "+artistId+": "+latestAlbum['artists'][0]['name']+" - "+latestAlbum['name'])
-			sendReleaseToUsers(con, cur, artistId, latestAlbum)
+		if latestSingle['name'] != artist[3]:
+			dbDate = datetime.datetime.strptime(artist[2], '%Y-%m-%d')
+			newDate = datetime.datetime.strptime(latestSingle['release_date'], '%Y-%m-%d')
+			if dbDate <= newDate:
+				updateLastArtistSingle(con, cur, artistId, latestSingle['id'], latestSingle['release_date'], latestSingle['name'])
+				print("New single found for "+artistId+": "+latestSingle['artists'][0]['name']+" - "+latestSingle['name'])
+				sendReleaseToUsers(con, cur, artistId, latestSingle)
+	if latestAlbum['id'] != artist[4]:
+		if latestAlbum['name'] != artist[6]:
+			dbDate = datetime.datetime.strptime(artist[5], '%Y-%m-%d')
+			newDate = datetime.datetime.strptime(latestAlbum['release_date'], '%Y-%m-%d')
+			if dbDate <= newDate:
+				updateLastArtistAlbum(con, cur, artistId, latestAlbum['id'], latestAlbum['release_date'], latestAlbum['name'])
+				print("New album found for "+artistId+": "+latestAlbum['artists'][0]['name']+" - "+latestAlbum['name'])
+				sendReleaseToUsers(con, cur, artistId, latestAlbum)
 
 
 def getNewestRelease(artistId, album_type, local = False):
 	if local:
 		lastRelease = sp.artist_albums(artistId,album_type=album_type,country='IT',limit=1)['items']
-		if len(lastRelease)>0:
-			lastRelease = lastRelease[0]
-		else:
-			lastRelease = {'release_date': '1910-01-01', 'id': ''}
-		return lastRelease
-	lastRelease = sp.artist_albums(artistId,album_type=album_type,limit=1)['items']
+	else:
+		lastRelease = sp.artist_albums(artistId,album_type=album_type,limit=1)['items']
 	if len(lastRelease)>0:
 		lastRelease = lastRelease[0]
 	else:
-		lastRelease = {'release_date': '1910-01-01', 'id': ''}
+		lastRelease = {'release_date': '1910-01-01', 'id': '', 'name': ''}
+	if 'release_date_precision' in lastRelease:
+		if lastRelease['release_date_precision'] == "year":
+			lastRelease['release_date'] = lastRelease['release_date']+"-01-01"
+		if lastRelease['release_date_precision'] == "month":
+			lastRelease['release_date'] = lastRelease['release_date']+"-01"
 	lastRelease['release_date'] = lastRelease['release_date'][:10]
 	return lastRelease
 
@@ -172,8 +175,8 @@ def botGetLastArtistReleases(userID, artistId):
 		else:
 			bot.sendMessage(userID, "No last single recorded")
 		time.sleep(1)
-		if artist[3] != "":
-			lastAlbum = sp.album(artist[3])
+		if artist[4] != "":
+			lastAlbum = sp.album(artist[4])
 			bot.sendPhoto(userID, lastAlbum['images'][0]['url'], generateMessage(lastAlbum), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Spotify Link", url="https://open.spotify.com/album/"+lastAlbum['id'])]]))
 		else:
 			bot.sendMessage(userID, "No last album recorded")
@@ -233,4 +236,4 @@ if __name__ == "__main__":
 	con.close()
 
 # users(id, artist)
-# artists(id, lastSingleID, lastSingleDate, lastAlbumID, lastAlbumDate)
+# artists(id, lastSingleID, lastSingleDate, lastSingleName, lastAlbumID, lastAlbumDate, lastAlbumName)
