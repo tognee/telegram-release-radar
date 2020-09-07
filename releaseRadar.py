@@ -18,6 +18,8 @@ sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 TOKEN = config['botToken']
 bot = telegram.Bot(token=TOKEN)
 
+timeout=512
+
 def escapeMarkdown(string):
     string = str(string).replace("*","\*").replace("_","\_").replace("*","\*").replace("`","\`")
     return string
@@ -106,23 +108,44 @@ def botRemoveArtist(con, cur, artistId):
         return
 
 def generateMessage(release):
-    message = "*"+escapeMarkdown(release['name'])+"*\n_"+escapeMarkdown(release['artists'][0]['name'])+"_\n\n🎵 "+release['release_date']+"\n▶️ #"+release['album_type'][:1].upper()+release['album_type'][1:]
+    message = "[‍](https://open.spotify.com/album/"+release['id']+")*"+escapeMarkdown(release['name'])+"*\n_"+escapeMarkdown(release['artists'][0]['name'])+"_\n\n🎵 "+release['release_date']+"\n▶️ #"+release['album_type'][:1].upper()+release['album_type'][1:]
     return message
+
+def sendRelease(user, image, message, inlineKey):
+    global timeout
+    try:
+        imageID = bot.sendPhoto(user[0], image, message, parse_mode="Markdown", reply_markup=inlineKey).photo[0].file_id
+        time.sleep(1)
+        timeout=512
+    except Exception as e:
+        print("\t"+str(e))
+        if str(e).startswith("Flood control exceeded."):
+            timer = int(str(e)[33:-8])
+            time.sleep(timer)
+            return sendRelease(user, image, message, inlineKey)
+        timeout = timeout*2
+        print("\tTimeout error, retrying with: "+str(timeout))
+        return sendRelease(user, image, message, inlineKey)
+    return imageID
 
 def sendReleaseToUsers(con, cur, artistId, release):
     users = getUsersForArtist(con, cur, artistId)
     message = generateMessage(release)
     imageID = None
+    inlineKey = {'inline_keyboard': [
+        [{'text':"Spotify Link", 'url': "https://open.spotify.com/album/"+release['id']}]
+    ]}
     for user in users:
         if not imageID:
-            imageID = bot.sendPhoto(user[0], release['images'][0]['url'], message, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Spotify Link", url="https://open.spotify.com/album/"+release['id'])]])).photo[0].file_id
+            imageID = sendRelease(user, release['images'][0]['url'], message, inlineKey)
         else:
-            bot.sendPhoto(user[0], imageID, message, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Spotify Link", url="https://open.spotify.com/album/"+release['id'])]]))
-        time.sleep(1)
+            sendRelease(user, imageID, message, inlineKey)
 
 def updateNewReleases(con, cur, artistId):
     latestAlbum = getNewestRelease(artistId, 'album')
+    latestAlbum['name'] = latestAlbum['name'].replace('“', '"').replace('”', '"')
     latestSingle = getNewestRelease(artistId, 'single')
+    latestSingle['name'] = latestSingle['name'].replace('“', '"').replace('”', '"')
     artist = getArtist(con, cur, artistId)
     if not artist:
         addArtist(con, cur, artistId, latestSingle['id'], latestSingle['release_date'], latestSingle['name'], latestAlbum['id'], latestAlbum['release_date'], latestAlbum['name'])
@@ -144,6 +167,32 @@ def updateNewReleases(con, cur, artistId):
                 print("New album found for "+artistId+": "+latestAlbum['artists'][0]['name']+" - "+latestAlbum['name'])
                 sendReleaseToUsers(con, cur, artistId, latestAlbum)
 
+def updateNewReleasesLocal(con, cur, artistId):
+    latestAlbum = getNewestRelease(artistId, 'album', True)
+    latestSingle = getNewestRelease(artistId, 'single', True)
+    artist = getArtist(con, cur, artistId)
+    if not artist:
+        addArtist(con, cur, artistId, latestSingle['id'], latestSingle['release_date'], latestSingle['name'], latestAlbum['id'], latestAlbum['release_date'], latestAlbum['name'])
+        res = "Added artist "+artistId
+        if  latestSingle['name'] != "":
+            res += "\n\tSingle: "+latestSingle['artists'][0]['name']+" - "+latestSingle['name']
+        if  latestAlbum['name'] != "":
+            res += "\n\tAlbum: "+latestAlbum['artists'][0]['name']+" - "+latestAlbum['name']
+        print(res)
+        return
+    if latestSingle['name'] != artist[3]:
+            dbDate = datetime.datetime.strptime(artist[2], '%Y-%m-%d')
+            newDate = datetime.datetime.strptime(latestSingle['release_date'], '%Y-%m-%d')
+            if dbDate <= newDate:
+                updateLastArtistSingle(con, cur, artistId, latestSingle['id'], latestSingle['release_date'], latestSingle['name'])
+                print("New single found for "+artistId+": "+latestSingle['artists'][0]['name']+" - "+latestSingle['name'])
+    if latestAlbum['id'] != artist[4]:
+        if latestSingle['name'] != artist[6]:
+            dbDate = datetime.datetime.strptime(artist[5], '%Y-%m-%d')
+            newDate = datetime.datetime.strptime(latestAlbum['release_date'], '%Y-%m-%d')
+            if dbDate <= newDate:
+                updateLastArtistAlbum(con, cur, artistId, latestAlbum['id'], latestAlbum['release_date'], latestAlbum['name'])
+                print("New album found for "+artistId+": "+latestAlbum['artists'][0]['name']+" - "+latestAlbum['name'])
 
 def getNewestRelease(artistId, album_type, local = False):
     if local:
@@ -162,7 +211,6 @@ def getNewestRelease(artistId, album_type, local = False):
     lastRelease['release_date'] = lastRelease['release_date'][:10]
     return lastRelease
 
-
 def botGetLastArtistReleases(userID, artistId):
     con = sqlite3.connect(os.path.join(os.path.dirname(os.path.realpath(__file__)),'database.db'))
     cur = con.cursor()
@@ -171,13 +219,15 @@ def botGetLastArtistReleases(userID, artistId):
     if artist:
         if artist[1] != "":
             lastSingle = sp.album(artist[1])
-            bot.sendPhoto(userID, lastSingle['images'][0]['url'], generateMessage(lastSingle), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Spotify Link", url="https://open.spotify.com/album/"+lastSingle['id'])]]))
+            inlineKey = {'inline_keyboard': [[{'text':"Spotify Link", 'url': "https://open.spotify.com/album/"+lastSingle['id']}]]}
+            bot.sendPhoto(userID, lastSingle['images'][0]['url'], generateMessage(lastSingle), parse_mode="Markdown", reply_markup=inlineKey)
         else:
             bot.sendMessage(userID, "No last single recorded")
-        time.sleep(1)
+        time.sleep(3)
         if artist[4] != "":
             lastAlbum = sp.album(artist[4])
-            bot.sendPhoto(userID, lastAlbum['images'][0]['url'], generateMessage(lastAlbum), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Spotify Link", url="https://open.spotify.com/album/"+lastAlbum['id'])]]))
+            inlineKey = {'inline_keyboard': [[{'text':"Spotify Link", 'url': "https://open.spotify.com/album/"+lastAlbum['id']}]]}
+            bot.sendPhoto(userID, lastAlbum['images'][0]['url'], generateMessage(lastAlbum), parse_mode="Markdown", reply_markup=inlineKey)
         else:
             bot.sendMessage(userID, "No last album recorded")
     else:
@@ -226,6 +276,14 @@ def addRemoveArtist(userID, artistID):
         botAddArtist(con, cur, artistID)
     con.close()
 
+def updateAll(artists):
+    con = sqlite3.connect(os.path.join(os.path.dirname(os.path.realpath(__file__)),'database.db'))
+    cur = con.cursor()
+    dbSetup(con, cur)
+    for artist in artists:
+        updateNewReleasesLocal(con, cur, artist)
+    con.close()
+
 if __name__ == "__main__":
     con = sqlite3.connect(os.path.join(os.path.dirname(os.path.realpath(__file__)),'database.db'))
     cur = con.cursor()
@@ -236,4 +294,4 @@ if __name__ == "__main__":
     con.close()
 
 # users(id, artist)
-# artists(id, lastSingleID, lastSingleDate, lastSingleName, lastAlbumID, lastAlbumDate, lastAlbumName)
+# artists(id, lastSingleID, lastSingleDate, lastAlbumID, lastAlbumDate)
