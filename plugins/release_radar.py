@@ -121,6 +121,8 @@ class Plugin:
         result = { 'single': None, 'album': None }
         if not current_artist:
             self.add_artist(artist_id, latest_single['id'], latest_single['release_date'], latest_single['name'], latest_album['id'], latest_album['release_date'], latest_album['name'])
+            result['single'] = latest_single
+            result['album'] = latest_album
             return result
         if latest_single['id'] != current_artist[1] and latest_single['name'] != current_artist[3]:
             db_date = datetime.strptime(current_artist[2], '%Y-%m-%d')
