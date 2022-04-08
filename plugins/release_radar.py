@@ -5,7 +5,7 @@ from telegram.ext import PrefixHandler, MessageHandler, Filters
 from telegram.utils.helpers import escape_markdown
 from telegram.error import RetryAfter
 
-import spotipy
+from spotipy import Spotify
 from spotipy.oauth2 import SpotifyClientCredentials
 
 def chunks(l, n):
@@ -39,7 +39,7 @@ class Plugin:
         self.sp = None
         if can_spotify_setup:
             client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
-            self.sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+            self.sp = Spotify(client_credentials_manager=client_credentials_manager)
 
         self.enabled = can_spotify_setup and db.is_enabled
         self.hidden = False
@@ -125,14 +125,14 @@ class Plugin:
             result['album'] = latest_album
             return result
         if latest_single['id'] != current_artist[1] and latest_single['name'] != current_artist[3]:
-            db_date = datetime.strptime(current_artist[2], '%Y-%m-%d')
+            db_date = datetime.strptime(current_artist[2] or "1910-01-01", '%Y-%m-%d')
             new_date = datetime.strptime(latest_single['release_date'], '%Y-%m-%d')
             if db_date < new_date:
                 self.update_last_artist_single(artist_id, latest_single['id'], latest_single['release_date'], latest_single['name'])
                 print(f"New single found for {artist_id}: {latest_single['artists'][0]['name']} - {latest_single['name']}")
                 result['single'] = latest_single
         if latest_album['id'] != current_artist[4] and latest_album['name'] != current_artist[6]:
-            db_date = datetime.strptime(current_artist[5], '%Y-%m-%d')
+            db_date = datetime.strptime(current_artist[5] or "1910-01-01", '%Y-%m-%d')
             new_date = datetime.strptime(latest_album['release_date'], '%Y-%m-%d')
             if db_date < new_date:
                 self.update_last_artist_album(artist_id, latest_album['id'], latest_album['release_date'], latest_album['name'])
