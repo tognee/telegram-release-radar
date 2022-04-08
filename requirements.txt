@@ -1,4 +1,4 @@
 python-telegram-bot
 requests
 spotipy
-dotenv
+python-dotenv
