@@ -7,6 +7,7 @@ from telegram.error import RetryAfter
 
 from spotipy import Spotify
 from spotipy.oauth2 import SpotifyClientCredentials
+from spotipy.exceptions import SpotifyException
 
 def chunks(l, n):
     for i in range(0, len(l), n):
@@ -39,7 +40,11 @@ class Plugin:
         self.sp = None
         if can_spotify_setup:
             client_credentials_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
-            self.sp = Spotify(client_credentials_manager=client_credentials_manager)
+            self.sp = Spotify(
+                client_credentials_manager=client_credentials_manager,
+                status_retries=5,
+                retries=5
+            )
 
         self.enabled = can_spotify_setup and db.is_enabled
         self.hidden = False
@@ -98,8 +103,13 @@ class Plugin:
         self.db.conn.commit()
 
     def get_newest_release(self, artist_id, album_type, local = False):
-        if local: latest_release = self.sp.artist_albums(artist_id, album_type=album_type, country='IT', limit=1)['items']
-        else: latest_release = self.sp.artist_albums(artist_id, album_type=album_type, limit=1)['items']
+        latest_release = None
+        while latest_release is None:
+            try:
+                if local: latest_release = self.sp.artist_albums(artist_id, album_type=album_type, country='IT', limit=1)['items']
+                else: latest_release = self.sp.artist_albums(artist_id, album_type=album_type, limit=1)['items']
+            except SpotifyException:
+                sleep(1)
         if len(latest_release)>0:
             latest_release = latest_release[0]
         else:
@@ -141,8 +151,10 @@ class Plugin:
         return result
 
     def send_release(self, bot, chat, response):
+        image_id = response['cover']
         try:
             image_id = bot.send_photo(chat, response['cover'], response['text'], parse_mode="MarkdownV2", reply_markup=response['keyboard'])
+            image_id = image_id.photo[0].file_id
         except RetryAfter as e:
             timer = int(str(e)[33:-8])
             sleep(timer)

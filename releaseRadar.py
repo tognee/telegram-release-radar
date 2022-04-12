@@ -26,6 +26,7 @@ def main():
     all_artists = rr.get_all_artists()
     for artist in all_artists:
         artist_id = artist[0]
+        print(f"Now checking artist {artist_id}")
         new_releases = rr.update_new_releases(artist_id)
         if new_releases['single']:
             rr.send_release_to_chats(bot, artist_id, new_releases['single'])
